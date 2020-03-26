@@ -20,10 +20,51 @@
   (require 'emacsql-sqlite)
 #+end_src
 
-
 * configuration
 * boilerplate
 * commands
+* test
+  :PROPERTIES:
+  :header-args:    :tangle no
+  :END:
+
+#+begin_src emacs-lisp
+  (setq model-registry nil)
+
+  (defun rekor:generate-slot (form)
+    (seq-let (name type) form
+      `(,name :initarg ,(intern (s-lex-format ":${name}"))
+              :accessor ,(intern (s-lex-format ":${name}"))
+              :type ,type)))
+
+  ;; (rekor:generate-slot '(foo bar))
+
+  (defmacro defmodel (name &rest fields)
+    (let* ((slot-forms (-map 'rekor:generate-slot fields))
+           (class-name (intern (s-lex-format "${name}-class")))
+           (constructor-name (intern (s-lex-format "${name}:new")))
+           (save-method-name (intern (s-lex-format "${name}:save"))))
+      `(progn
+         (defclass ,class-name () ,slot-forms)
+
+         (cl-defmethod ,save-method-name ((obj person-class))
+           (message "Hello, %s %s!"
+                    (oref obj :first-name)
+                    (oref obj :last-name)))
+
+         (defun ,constructor-name (&rest initargs)
+           (apply ,class-name initargs)))))
+
+  (defmodel person
+    (first-name string)
+    (last-name string)
+    (age number))
+
+  (person:save
+   (person:new :first-name "foo"
+               :last-name "bar"
+               :age 34))
+#+end_src
 * package epilogue
 #+begin_src emacs-lisp
   (provide 'rekor)
