@@ -1,0 +1,24 @@
+#+TITLE: rekor.el
+
+This package is *experimental*.
+
+Rekor is an ORM (object relational mapper) over EmacSQL.
+
+* Installation
+** el-get
+#+begin_src emacs-lisp
+  (el-get-bundle rekor
+    :url "https://github.com/apoptosis/rekor.el.git"
+    :features rekor)
+#+end_src
+
+** straight.el
+#+begin_src emacs-lisp
+  (use-package rekor
+    :straight (rekor :type git :host github :repo "apoptosis/rekor.el")
+#+end_src
+
+* Configuration
+There is no configuraiton yet!
+* Usage
+Who knows!?
