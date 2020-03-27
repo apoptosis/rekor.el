@@ -21,50 +21,230 @@
 #+end_src
 
 * configuration
-* boilerplate
-* commands
+* state
+** db
+#+begin_src emacs-lisp
+  (setq rekor:db (emacsql-sqlite "/tmp/rekor.sql"))
+#+end_src
+
+** tables
+#+begin_src emacs-lisp
+  (setq rekor:db:tables (make-hash-table))
+#+end_src
+
+* objs
+** boilerplate
+*** generate-slot
+#+begin_src emacs-lisp
+  (defun rekor:objs:generate-slot (form)
+    (seq-let (name type _) form
+      `(,name :initarg ,(intern (s-lex-format ":${name}"))
+              :accessor ,(intern (s-lex-format ":${name}"))
+              :type ,type)))
+
+  ;; (rekor:generate-slot '(foo bar))
+#+end_src
+*** slot-value
+#+begin_src emacs-lisp
+  (defun rekor:objs:slot-value (obj slot)
+    (let ((slot-name (intern (format ":%s" slot))))
+      (if (eval `(slot-boundp obj ,slot-name))
+        (eval `(oref ,obj ,slot-name))
+        nil)))
+#+end_src
+*** values
+#+begin_src emacs-lisp
+  (defun rekor:objs:values (obj)
+    (--map (rekor:objs:slot-value obj it) (object-slots obj)))
+#+end_src
+*** new
+#+begin_src emacs-lisp
+  (defun rekor:objs:new (class initargs)
+    (let* ((obj (apply class initargs))
+           (values (rekor:objs:values obj))
+           (_ (eval `(emacsql rekor:db [:insert-into ,class :values [,@values]])))
+           (id (caar (emacsql rekor:db [:select (funcall last_insert_rowid)]))))
+      (oset obj :id id)
+      obj))
+#+end_src
+** api
+*** save
+#+begin_src emacs-lisp
+  (defun rekor:objs:save (obj)
+    (let* ((class (eieio-object-class obj))
+           (name (eieio-object-class-name obj))
+           (slots (object-slots obj))
+           (values (rekor:objs:values obj))
+           (set-forms (--map-indexed (rekor:db:generate-set-form obj it (+ 2 it-index))
+                                     (cdr slots)))
+           (query-form `(emacsql rekor:db [:update ,name :set [,@set-forms] :where (= id $s1)] ,@values)))
+      (eval query-form)))
+#+end_src
+*** find
+#+begin_src emacs-lisp
+  (defmacro rekor:objs:find (class where &rest values)
+    `(let* ((data (emacsql rekor:db
+                           [:select * :from ,class :where ,where] ,@values))
+            (slot-infos (eieio--class-slots (eieio--class-object ,class)))
+            (slots (--map (aref it 1) slot-infos))
+            (initargs (--map (eieio--class-slot-initarg (eieio--class-object ,class) it) slots))
+            (params (--map (-interleave initargs it) data)))
+       (--map (apply ,class it) params)))
+
+
+
+#+end_src
+* db
+** boilerplate
+*** generate-template
+#+begin_src emacs-lisp
+  (defun rekor:db:generate-template (type index)
+    (intern (format "$%s%s" (rekor:db:pattern-for-type type) index)))
+#+end_src
+*** pattern-for-type
+#+begin_src emacs-lisp
+  (defun rekor:db:pattern-for-type (type)
+    (pcase type
+      (integer "s")
+      (float "s")
+      (number "s")
+      (string "s")
+      (list "v")
+      (vector "v")
+      (symbol "i")))
+#+end_src
+
+*** generate-set-form
+#+begin_src emacs-lisp
+  (defun rekor:db:generate-set-form (obj slot index)
+    `(= ,slot ,(rekor:db:generate-template slot index)))
+#+end_src
+*** connect
+#+begin_src emacs-lisp
+  (defun rekor:db:connect (filename)
+    (setq rekor:db (emacsql-sqlite filename)))
+#+end_src
+*** exists
+#+begin_src emacs-lisp
+  (defun rekor:db:exists (table-name)
+    (= 1 (caar (emacsql rekor:db
+                       [:select (funcall count *)
+                        :from sqlite_master
+                        :where (= name $s1)] table-name))))
+#+end_src
+
+*** create
+#+begin_src emacs-lisp
+  (defun rekor:db:create (name fields)
+    (unless (rekor:db:exists name)
+      (eval `(emacsql rekor:db [:create-table ,name ([,@fields])]))))
+#+end_src
+
+*** query
+#+begin_src emacs-lisp
+  (defmacro rekor:db:query (table where values)
+    ` (let  ((result (emacsql rekor:db
+                              [:select *
+                               :from ,table
+                               :where ,where] ,values)))
+        (if (= 1 (length result))
+            (car result)
+          result)))
+#+end_src
+** commands
+*** drop
+#+begin_src emacs-lisp
+  (defun rekor:db:drop (&optional name)
+    (interactive)
+    (let ((name (or name (completing-read (map-keys rekor:db:tables)))))
+      (when (rekor:db:exists name)
+        (eval `(emacsql rekor:db [:drop-table ,name])))))
+#+end_src
+
+*** migrate-all
+#+begin_src emacs-lisp
+  (defun rekor:db:migrate-all ()
+    (interactive)
+    (map-apply (lambda (name fields)
+                 (rekor:db:create name fields)) rekor:db:tables))
+#+end_src
+
+*** drop-all
+#+begin_src emacs-lisp
+  (defun rekor:db:drop-all ()
+    (interactive)
+    (map-apply (lambda (name _)
+                 (rekor:db:drop name)) rekor:db:tables))
+#+end_src
+
+* defmodel
+#+begin_src emacs-lisp
+  (defun rekor:objs:generate-setters (class slots)
+    (--map `(defun ,(intern (format "%s:%s" ,class it)) (obj value)
+              (oset obj ,it value)) slots))
+
+  (defmacro defmodel (name &rest fields)
+    (let* ((id-field '(id integer :primary-key :autoincrement :unique))
+           (fields (append (list id-field) fields))
+           (slot-forms (-map 'rekor:objs:generate-slot fields))
+           (class-name (intern (s-lex-format "${name}-class")))
+           (constructor-name (intern (s-lex-format "${name}:new")))
+           (save-method-name (intern (s-lex-format "${name}:save")))
+           (setters (rekor:objs:generate-setters name (-map 'car fields))))
+      (map-put rekor:db:tables name fields)
+      `(progn
+         (defclass ,name () ,slot-forms)
+
+         (cl-defmethod rekor:save ((obj ,name))
+           (rekor:objs:save obj))
+
+         ,@setters
+
+         (defun ,constructor-name (&rest initargs)
+           (rekor:objs:new ,name initargs)))))
+#+end_src
+
 * test
   :PROPERTIES:
   :header-args:    :tangle no
   :END:
 
 #+begin_src emacs-lisp
-  (setq model-registry nil)
-
-  (defun rekor:generate-slot (form)
-    (seq-let (name type) form
-      `(,name :initarg ,(intern (s-lex-format ":${name}"))
-              :accessor ,(intern (s-lex-format ":${name}"))
-              :type ,type)))
-
-  ;; (rekor:generate-slot '(foo bar))
-
-  (defmacro defmodel (name &rest fields)
-    (let* ((slot-forms (-map 'rekor:generate-slot fields))
-           (class-name (intern (s-lex-format "${name}-class")))
-           (constructor-name (intern (s-lex-format "${name}:new")))
-           (save-method-name (intern (s-lex-format "${name}:save"))))
-      `(progn
-         (defclass ,class-name () ,slot-forms)
-
-         (cl-defmethod ,save-method-name ((obj person-class))
-           (message "Hello, %s %s!"
-                    (oref obj :first-name)
-                    (oref obj :last-name)))
-
-         (defun ,constructor-name (&rest initargs)
-           (apply ,class-name initargs)))))
-
+  ;; define a person model
   (defmodel person
-    (first-name string)
-    (last-name string)
-    (age number))
+    (first-name string :not-null)
+    (last-name string :not-null)
+    (age number :not-null :check (> age 0)))
 
-  (person:save
-   (person:new :first-name "foo"
-               :last-name "bar"
-               :age 34))
+  ;; reset the database
+  (rekor:db:connect "/tmp/test.sql")
+  (rekor:db:drop-all)
+  (rekor:db:migrate-all)
+
+  (let
+      ;; create a new person named "foo bar"
+      ((obj (person:new :first-name "foo"
+                        :last-name "bar"
+                        :age 34)))
+    ;; change their last-name to "baz"
+    (::last-name obj "baz")
+    ;; change their age to 99
+    (::age obj 99)
+    ;; save the change to the database
+    (rekor:save obj)
+    ;; lookup the person by first and last name
+    ;; returns an EIEIO instance of the `person` class
+    (let ((foo (car (rekor:objs:find person
+                                     (and (= first-name $s1)
+                                          (= last-name $s2)) "foo" "baz"))))
+      ;; show that the age was changed
+      (eq 99 (:age foo ))))
+
+  ;; => t
+
+
 #+end_src
+
 * package epilogue
 #+begin_src emacs-lisp
   (provide 'rekor)
