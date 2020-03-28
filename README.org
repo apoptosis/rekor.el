@@ -23,6 +23,31 @@ It does not (yet?):
 - defer or lazy evaluate anything
 - support transactions
 
+
+* Quick Example
+#+begin_src emacs-lisp
+  (defmodel person
+    (first-name string :not-null)
+    (last-name string :not-null)
+    (age integer :not-null :check (> age 0)))
+
+  (rekor:db:connect "/tmp/data.sql")
+  (rekor:db:migrate-all)
+
+  (let ((kant (person:new :first-name "Immanuel"
+                          :last-name "Kant"
+                          :age 296)))
+    (::first-name kant  "Mack Daddy")
+    (rekor:save kant)
+
+    (dolist (obj (:? person (> :age 100)))
+        (message "%s %s is %s years old." (:first-name obj)
+                                          (:last-name obj)
+                                          (:age obj))))
+
+  ;; Mack Daddy Kant is 296 years old.
+#+end_src
+
 * Installation
 ** el-get
 #+begin_src emacs-lisp
@@ -46,7 +71,7 @@ Models are defined with the =(defmodel NAME &rest FIELDS)= macro:
   (defmodel person
     (first-name string :not-null)
     (last-name string :not-null)
-    (age number :not-null :check (> age 0)))
+    (age integer :not-null :check (> age 0)))
 #+end_src
 
 =NAME= is used to determine:
