@@ -1,6 +1,6 @@
 #+TITLE: rekor.el
 
-This package is *experimental*.
+This package is *experimental*. /I am probably not qualified to write an ORM!/
 
 =Rekor= is a greek noun for "record"
 
