@@ -64,7 +64,7 @@ It does not (yet?):
 * Usage
 ** Defining Models
 
-Models are defined with the =(defmodel NAME &rest FIELDS)= macro:
+Models are defined with the =(defmodel MODEL-NAME &rest FIELDS)= macro:
 
 #+begin_src emacs-lisp
   (defmodel person
@@ -73,7 +73,7 @@ Models are defined with the =(defmodel NAME &rest FIELDS)= macro:
     (age integer :not-null :check (> age 0)))
 #+end_src
 
-=NAME= is used to determine:
+=MODEL-NAME= is used to determine:
 - the SQL table name
 - the underlying EIEIO class
 
@@ -173,7 +173,7 @@ A generic setter method is created for each field:
 #+end_src
 
 *** Saving Instances
-To save an instance to the database call =(rekor:save OBJ).
+To save an instance to the database call =(rekor:save OBJ)=.
 
 #+begin_src emacs-lisp
   (rekor:save person-obj)
@@ -181,7 +181,7 @@ To save an instance to the database call =(rekor:save OBJ).
 
 
 *** Making Queries
-=(:? NAME WHERE &rest VALUES)= can be used to search for existing objects in the
+=(:? MODEL-NAME WHERE &rest VALUES)= can be used to search for existing objects in the
 database. It returns a list of the results or nil.
 
 The =WHERE= clause is passed directly to EmacSQL as a [[https://github.com/skeeto/emacsql#schema][where clause]].
