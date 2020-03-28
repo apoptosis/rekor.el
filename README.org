@@ -41,9 +41,8 @@ It does not (yet?):
     (rekor:save kant)
 
     (dolist (obj (:? person (> :age 100)))
-        (message "%s %s is %s years old." (:first-name obj)
-                                          (:last-name obj)
-                                          (:age obj))))
+      (with-slots (first-name last-name age) obj
+          (message "%s %s is %s years old." first-name last-name age))))
 
   ;; Mack Daddy Kant is 296 years old.
 #+end_src
