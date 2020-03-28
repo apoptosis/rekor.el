@@ -2,7 +2,26 @@
 
 This package is *experimental*.
 
-Rekor is an ORM (object relational mapper) over EmacSQL.
+=Rekor= is a greek noun for "record"
+
+Rekor.el is an [[https://en.wikipedia.org/wiki/Object-relational_mapping][ORM]] (object relational mapper) for Emacs Lisp and SQLite.
+
+- It uses [[https://www.gnu.org/software/emacs/manual/html_node/eieio/][EIEIO]] for the object system
+- It uses [[https://github.com/skeeto/emacsql][EmacSQL]] for the underlying SQL
+
+It does:
+- allow you to easily define db-backed model classes
+- create/drop the tables backing model classes
+- save model instances as rows in the database
+- execute queries resulting in model instances
+- everything in the most naive unoptimized way possible
+
+It does not (yet?):
+- generate or run migrations
+- automatically resolve foreign-key relationships
+- automatically safe-quote string-values
+- defer or lazy evaluate anything
+- support transactions
 
 * Installation
 ** el-get
@@ -18,7 +37,145 @@ Rekor is an ORM (object relational mapper) over EmacSQL.
     :straight (rekor :type git :host github :repo "apoptosis/rekor.el")
 #+end_src
 
-* Configuration
-There is no configuraiton yet!
 * Usage
-Who knows!?
+** Defining Models
+
+Models are defined with the =(defmodel NAME &rest FIELDS)= macro:
+
+#+begin_src emacs-lisp
+  (defmodel person
+    (first-name string :not-null)
+    (last-name string :not-null)
+    (age number :not-null :check (> age 0)))
+#+end_src
+
+=NAME= is used to determine:
+- the SQL table name
+- the underlying EIEIO class
+
+*** Model Fields
+Each field form in =FIELDS= is:
+- a column in the SQL table
+- an attribute of the EIEIO class
+
+Field forms have the following structure:
+
+#+begin_src emacs-lisp
+  (NAME TYPE &rest CONSTRAINTS)
+#+end_src
+
+=NAME= is used to determine:
+- column name in the SQL table
+- attribute name in the EIEIO class
+
+=TYPE= can be any of the following:
+- integer
+- float
+- number
+- string
+
+=CONSTRAINTS= are passed directly to EmacSQL as [[https://github.com/skeeto/emacsql#schema][column constraints]].
+
+** Database Management
+*** Connecting to the database
+Rekor maintains a single database cursor. To set it, call
+=(rekor:db:connect FILENAME)= with the filename of your database.
+
+All subsequent calls to Rekor will use that database until =rekor:db:connect= is
+called with a different filename.
+
+#+begin_src emacs-lisp
+  (rekor:db:connect "/tmp/data.sql")
+#+end_src
+
+*** Migrating the database
+Rekor doesn't really support migrations. But it will create tables.
+
+Call =(rekor:db:migrate-all)= to create tables for any defined models.
+
+*** Resetting the database
+During development it may be handy to drop the tables for all models.
+
+Call =(rekor:db:drop-all)= to do so.
+
+Of course, if the only tables in the database are your Rekor models, you can
+also just delete the database file. :)
+
+
+
+** Working with Model Objects
+To introduce working with model objects we'll use an example.
+
+First, let's create a =person= model:
+
+#+begin_src emacs-lisp
+  (defmodel person
+    (first-name string :not-null)
+    (last-name string :not-null)
+    (age integer :not-null :check (> age 0)))
+#+end_src
+
+The =person= model has fields for first name, last name, and age. We've used some
+column constraints which are used when constructing the underlying SQL
+table. In this case, all three fields are constrained to be NOT NULL.
+
+The age field additionally is constrained to only unsigned, or positive values.
+
+*** Creating Instances
+Each call to =defmodel= generates a corresponding constructor that can be used to
+create instances of the model:
+
+#+begin_src emacs-lisp
+  (setq person-obj ((person:new :first-name "Immanuel"
+                                :last-name "Kant"
+                                :age 296)))
+#+end_src
+
+*** Getting Field Values
+A generic getter method is created for each field:
+
+#+begin_src emacs-lisp
+  (:first-name person-obj) ; "Immanuel"
+#+end_src
+
+*** Setting Field Values
+A generic setter method is created for each field:
+
+#+begin_src emacs-lisp
+  (::first-name person-obj "Mack Daddy")
+  (format "%s %s" (:first-name person-obj)
+                  (:last-name person-obj))
+  ; "Mack Daddy Kant"
+#+end_src
+
+*** Saving Instances
+To save an instance to the database call =(rekor:save OBJ).
+
+#+begin_src emacs-lisp
+  (rekor:save person-obj)
+#+end_src
+
+
+*** Making Queries
+=(:? NAME WHERE &rest VALUES)= can be used to search for existing objects in the
+database. It returns a list of the results or nil.
+
+The =WHERE= clause is passed directly to EmacSQL as a [[https://github.com/skeeto/emacsql#schema][where clause]].
+
+#+begin_src emacs-lisp
+  (dolist (obj (:? person (> age 100)))
+    (with-slots (first-name last-name age) obj
+      (message "%s %s is %s years old" first-name last-name age)))
+  ;; "Mack Daddy Kant is 296 years old"
+#+end_src
+
+If the =WHERE= clause contains [[https://github.com/skeeto/emacsql#templates][templates]], you can provide =&rest VALUES= with
+their values. This is necessary if you have the value in a variable:
+
+#+begin_src emacs-lisp
+  (let ((minimum-age 100))
+    (dolist (obj (:? person (> age $s1) minimum-age))
+        (with-slots (first-name last-name age) obj
+          (message "%s %s is %s years old" first-name last-name age))))
+  ;; "Mack Daddy Kant is 296 years old"
+#+end_src
