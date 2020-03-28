@@ -3,7 +3,7 @@
 
 ;; Author: Dustin Lacewell <dlacewell@gmail.com>
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "26") (emacsql-sqlite "0"))
+;; Package-Requires: ((emacs "26") (emacsql-sqlite "0") (dash "0") (s "0"))
 ;; Keywords: org-mode formatting
 ;; URL: http://github.com/apoptosis/rekor.el
 
@@ -13,6 +13,8 @@
 
 ;;; Code:
 (require 'emacsql-sqlite)
+(require 'dash)
+(require 's)
 
 (setq rekor:db (emacsql-sqlite "/tmp/rekor.sql"))
 
