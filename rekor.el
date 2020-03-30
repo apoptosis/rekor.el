@@ -445,11 +445,6 @@
     ;;    ,@getters)
     ))
 
-(let ((db (rekor:database)))
-  (rekor:database:connect db)
-  (with-var (map-elt ))
-  (rekor:database:execute db [:select * :from person :where (< id 2)]))
-
 (provide 'rekor)
 
 ;;; rekor.el ends here
