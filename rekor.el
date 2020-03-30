@@ -315,8 +315,11 @@
 
 (defun rekor:objs:generate-query (model-name where &rest values)
   `(let* ((class-symbol (rekor:objs:class-symbol ',model-name))
-          (data (emacsql rekor:db
-                         [:select * :from ,model-name :where ,where] ,@values))
+          (dummy (apply class-symbol nil))
+          (table (oref dummy __table))
+          (database (oref table database))
+          (data (rekor:database:execute database
+                                        [:select * :from ,model-name :where ,where] ,@values))
           (slot-infos (eieio--class-slots (eieio--class-object class-symbol)))
           (slots (--map (aref it 1) slot-infos))
           (initargs (--map (eieio--class-slot-initarg (eieio--class-object class-symbol)
